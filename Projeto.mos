@@ -1,0 +1,140 @@
+model Projeto
+uses "mmxprs"
+uses "mmsystem"; !access to the Xpress-Optimizer solver
+
+declarations
+    !NT = 6                                    ! Number of time periods (months)
+    !MONTHS = 1..NT
+    !PRODS = 1..4                              ! Set of components
+    m: integer
+    n: integer
+    !DEM: array(PRODS,MONTHS) of integer       ! Demand of components per month
+    !CPROD: array(PRODS) of integer            ! Production costs
+    !CSTOCK: array(PRODS) of real              ! Storage costs
+    !CADD,CRED: real                           ! Cost of additional/reduced prod.
+    !ISTOCK,FSTOCK: array(PRODS) of integer    ! Initial and final stock levels
+    !produce: array(PRODS,MONTHS) of mpvar     ! Quantities produced per month
+    !store: array(PRODS,MONTHS) of mpvar       ! Stock levels at end of every month
+    !reduce: array(PRODS, MONTHS) of mpvar            ! Reduction of production per month
+    !add: array(PRODS, MONTHS) of mpvar               ! Increase of production per month
+end-declarations
+
+fopen("CompEletronicas.txt",F_INPUT) ! abrir o ficheiro 
+        forall(1 .. 2) readln ! lê as 1as 2 linhas e da skip
+        readln(m)  ! lê o valor da variavel
+        forall(1 .. 2) readln
+        readln(n) ! lê o valor da variável
+fclose(F_INPUT)
+
+declarations
+    MONTHS = 1..n                           ! Number of time periods (months)
+    PRODS = 1..m                            ! Set of components
+    x: array(PRODS,MONTHS) of mpvar
+    DEM: array(PRODS,MONTHS) of integer       ! Demand of components per month
+    CPROD: array(PRODS) of integer            ! Production costs
+    CSTOCK: array(PRODS) of real              ! Storage costs
+    CADD,CRED: real                           ! Cost of additional/reduced prod.
+    ISTOCK,FSTOCK: array(PRODS) of integer    ! Initial and final stock levels
+    produce: array(PRODS,MONTHS) of mpvar     ! Quantities produced per month
+    store: array(PRODS,MONTHS) of mpvar       ! Stock levels at end of every month
+    reduce: array(PRODS, MONTHS) of mpvar     ! Reduction of production per month
+    add: array(PRODS, MONTHS) of mpvar        ! Increase of production per month
+    Rest: array(PRODS,MONTHS) of linctr
+end-declarations
+
+fopen("CompEletronicas.txt",F_INPUT)
+        forall(1 .. 2) readln
+        readln(m)
+        forall(1 .. 2) readln
+        readln(n)
+        forall(1 .. 2) readln
+        forall(i in PRODS) read(CPROD(i)) ! custos de producao
+        forall(1 .. 3) readln
+        forall(i in PRODS) read(CSTOCK(i)) ! custos stock
+        forall(1 .. 3) readln
+        forall(i in PRODS) read (ISTOCK(i)) ! custos iniciais stock
+        forall(1 .. 3) readln
+        forall(i in PRODS) read (FSTOCK(i)) !custos finais stock
+        forall(1 .. 3) readln
+        read(CADD)
+        forall(1 .. 3) readln
+        read(CRED)
+        forall(1 .. 3) readln
+        forall(i in PRODS, j in MONTHS) read(DEM(i,j)) ! lê a matriz dos coeficientes tecnológicos
+fclose(F_INPUT)
+
+		!forall(i in PRODS, j in MONTHS) read(DEM(i,j))
+		!forall(i in PRODS) read(CPROD(i))
+		!forall(i in PRODS) read(CSTOCK(i))
+		!read(CADD)
+		!read(CRED)
+		!forall(i in PRODS) read (ISTOCK(i))
+		!forall(i in PRODS) read (FSTOCK(i))
+fclose(F_INPUT)
+writeln("DEM= ", DEM)
+writeln("CPROD= ",CPROD)
+writeln("CSTOCK= ",CSTOCK)
+writeln("CADD= ", CADD)
+writeln("CRED= ", CRED)
+writeln("ISTOCK= ",ISTOCK)
+writeln("FSTOCK= ",FSTOCK)
+!writeln("Produce= ", produce)
+!writeln("Store= ", store)
+!writeln("Reduce= ", reduce)
+!writeln("Add= ", add)
+
+! Objective: total cost of production, storage, and change of prod. level
+Cost:= sum(p in PRODS, t in MONTHS) (CPROD(p)*produce(p,t) + CSTOCK(p)*store(p,t)) + sum(p in PRODS, t in 2..n) (CRED*reduce(p, t) + CADD*add(p, t)) ! valor de custo pretendente a minimizar
+! 1ª parte da equacao : custo de producao * producao + custo stock * store(acumulado) 
+!2ªa parte equacao: custo reducao * reducao de produçao + custo aumento * aumento de producao (considerando os próx meses)
+
+! Stock balance constraints (satisfy demands)
+forall(p in PRODS, t in MONTHS)
+    store(p,t) = if(t>1, store(p,t-1), ISTOCK(p)) + produce(p,t) - DEM(p,t) !niveis de stock, em cada mês, considerando o nivel inicial de stock + produção - coeficientes tecnologicos
+
+! Changes to the level of produc
+forall(p in PRODS, t in 2..n)
+    (produce(p,t) - produce(p,t-1)) = add(p,t) - reduce(p,t) ! aumento e redução de produção (considerando o prox mês)
+
+! Guarantee final stock levels
+forall(p in PRODS) store(p,n) >= FSTOCK(p) ! niveis stock em cada mês, considerando os niveis de stock finais
+
+! Solve the problem
+minimize(Cost)
+
+writeln("-----------------------------------------------------")
+
+!writeln("Problem Status: ",status(getprobstat))
+
+!if (status(getprobstat)="Optimum_found") then
+!write problem solution
+writeln("-----------------------------------------------------")
+writeln("Solucao")
+
+writeln("Cost= ", getobjval)
+
+!forall(i in MONTHS, j in MONTHS)
+forall(i in PRODS, j in MONTHS)
+    !writeln("   x(",i,")= ", getsol(x(i).sol))
+    writeln("   x(",i,",",j,") = ", produce(i, j).sol) ! Valores da matriz de produção
+
+writeln
+
+writeln("Nivel dos recursos/sua importancia(variavel dual)") ! analise dos recursos
+
+forall(i in PRODS,j in MONTHS)
+    writeln("   Rest(",i,",",j,")= ", (produce(i,j).sol)-(store(i,j).sol) ," / ", (produce(i,j).sol)) 
+    ! quantidade analisada para o produzido - (armazenado) , para a analise dual, a dividir pelo nivel de produção
+
+writeln
+
+writeln("Custos reduzidos")
+
+forall(i in PRODS, j in MONTHS)
+    writeln("   x(",i,",",j,")= ", -(produce(i,j).sol-DEM(i,j).sol)) ! analise passa pela produção - coeficientes tecnológicos da matriz
+!note que o programa da  getrcost = c_j - z_j
+
+!end-if !write problem solution
+writeln("-----------------------------------------------------")
+
+end-model
